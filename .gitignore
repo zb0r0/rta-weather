@@ -1,0 +1,13 @@
+
+
+# Backupy bazy danych — mogą być duże, trzymaj lokalnie
+backups/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Docker
+*.log
