@@ -1,14 +1,15 @@
 """
-Weather Consumer (Kafka → PostgreSQL)
+Weather Consumer — Kafka → PostgreSQL
 --------------------------------------
-Konsumuje wiadomości z topiku 'weather-raw', parsuje payload OWM
-i zapisuje do tabeli weather_raw w PostgreSQL.
+Konsumuje wiadomości z topiku 'weather-raw' (format Open-Meteo current),
+parsuje payload i zapisuje do tabeli weather_raw w PostgreSQL.
 """
 
 import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
@@ -33,6 +34,35 @@ POSTGRES_DB             = os.environ["POSTGRES_DB"]
 POSTGRES_USER           = os.environ["POSTGRES_USER"]
 POSTGRES_PASSWORD       = os.environ["POSTGRES_PASSWORD"]
 
+# ── Kody WMO → opis (taki sam słownik jak w historical_fetch.py) ──────────────
+
+WMO_DESCRIPTIONS = {
+    0:  ("Clear",        "clear sky"),
+    1:  ("Clear",        "mainly clear"),
+    2:  ("Clouds",       "partly cloudy"),
+    3:  ("Clouds",       "overcast"),
+    45: ("Fog",          "fog"),
+    48: ("Fog",          "rime fog"),
+    51: ("Drizzle",      "light drizzle"),
+    53: ("Drizzle",      "moderate drizzle"),
+    55: ("Drizzle",      "dense drizzle"),
+    61: ("Rain",         "slight rain"),
+    63: ("Rain",         "moderate rain"),
+    65: ("Rain",         "heavy rain"),
+    71: ("Snow",         "slight snow"),
+    73: ("Snow",         "moderate snow"),
+    75: ("Snow",         "heavy snow"),
+    77: ("Snow",         "snow grains"),
+    80: ("Rain",         "slight showers"),
+    81: ("Rain",         "moderate showers"),
+    82: ("Rain",         "violent showers"),
+    85: ("Snow",         "slight snow showers"),
+    86: ("Snow",         "heavy snow showers"),
+    95: ("Thunderstorm", "thunderstorm"),
+    96: ("Thunderstorm", "thunderstorm with hail"),
+    99: ("Thunderstorm", "thunderstorm with heavy hail"),
+}
+
 # ── INSERT SQL ────────────────────────────────────────────────────────────────
 
 INSERT_SQL = """
@@ -43,83 +73,96 @@ INSERT INTO weather_raw (
     wind_speed_ms, wind_deg, wind_gust_ms,
     clouds_pct,
     rain_1h_mm, snow_1h_mm,
-    weather_id, weather_main, weather_description, weather_icon,
+    weather_id, weather_main, weather_description,
     sunrise_at, sunset_at,
     lat, lon,
     raw_payload
-) VALUES (
-    to_timestamp(%(measured_at)s),
-    %(temp_k)s, %(feels_like_k)s, %(temp_min_k)s, %(temp_max_k)s,
+)
+SELECT
+    %(measured_at)s,
+    %(temp_k)s, %(feels_like_k)s, %(temp_k)s, %(temp_k)s,
     %(pressure_hpa)s, %(humidity_pct)s, %(visibility_m)s,
     %(wind_speed_ms)s, %(wind_deg)s, %(wind_gust_ms)s,
     %(clouds_pct)s,
     %(rain_1h_mm)s, %(snow_1h_mm)s,
-    %(weather_id)s, %(weather_main)s, %(weather_description)s, %(weather_icon)s,
-    to_timestamp(%(sunrise_at)s), to_timestamp(%(sunset_at)s),
+    %(weather_id)s, %(weather_main)s, %(weather_description)s,
+    %(sunrise_at)s, %(sunset_at)s,
     %(lat)s, %(lon)s,
     %(raw_payload)s
+WHERE NOT EXISTS (
+    SELECT 1 FROM weather_raw
+    WHERE measured_at = %(measured_at)s
+      AND raw_payload IS NOT NULL
 )
 """
 
-# ── Parsowanie payloadu OWM ───────────────────────────────────────────────────
+# ── Parser payloadu Open-Meteo ────────────────────────────────────────────────
 
-def parse_owm_payload(data: dict) -> dict:
-    """Przekształca surowy JSON z OWM na słownik gotowy do INSERT."""
-    main      = data.get("main", {})
-    wind      = data.get("wind", {})
-    clouds    = data.get("clouds", {})
-    rain      = data.get("rain", {})
-    snow      = data.get("snow", {})
-    sys       = data.get("sys", {})
-    coord     = data.get("coord", {})
-    weather   = data.get("weather", [{}])[0]
+def parse_open_meteo_payload(data: dict) -> dict:
+    """Przekształca JSON Open-Meteo current na słownik gotowy do INSERT."""
+    current = data.get("current", {})
+    daily   = data.get("daily", {})
+
+    wmo_code = current.get("weather_code")
+    main_desc, desc = WMO_DESCRIPTIONS.get(wmo_code, ("Unknown", "unknown"))
+
+    temp_c       = current.get("temperature_2m")
+    feels_like_c = current.get("apparent_temperature")
+    temp_k       = (temp_c + 273.15)       if temp_c       is not None else None
+    feels_like_k = (feels_like_c + 273.15) if feels_like_c is not None else None
+
+    # Open-Meteo zwraca czas jako "2026-05-28T20:00" (czas lokalny strefy timezone)
+    # Parsujemy bez strefy i traktujemy jako UTC (Open-Meteo daje czas lokalny Warszawy)
+    measured_at_str = current.get("time", "")
+    try:
+        measured_at = datetime.fromisoformat(measured_at_str).replace(tzinfo=timezone.utc)
+    except ValueError:
+        measured_at = datetime.now(timezone.utc)
+        log.warning("Nie można sparsować czasu: %s — używam NOW()", measured_at_str)
+
+    # Sunrise/sunset — Open-Meteo zwraca listę (jeden element na dziś)
+    sunrise_str = (daily.get("sunrise") or [None])[0]
+    sunset_str  = (daily.get("sunset")  or [None])[0]
+
+    def parse_dt(s):
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
 
     return {
-        "measured_at":       data.get("dt"),
-        # temperatura
-        "temp_k":            main.get("temp"),
-        "feels_like_k":      main.get("feels_like"),
-        "temp_min_k":        main.get("temp_min"),
-        "temp_max_k":        main.get("temp_max"),
-        # atmosfera
-        "pressure_hpa":      main.get("pressure"),
-        "humidity_pct":      main.get("humidity"),
-        "visibility_m":      data.get("visibility"),
-        # wiatr
-        "wind_speed_ms":     wind.get("speed"),
-        "wind_deg":          wind.get("deg"),
-        "wind_gust_ms":      wind.get("gust"),
-        # zachmurzenie i opady
-        "clouds_pct":        clouds.get("all"),
-        "rain_1h_mm":        rain.get("1h"),
-        "snow_1h_mm":        snow.get("1h"),
-        # opis
-        "weather_id":        weather.get("id"),
-        "weather_main":      weather.get("main"),
-        "weather_description": weather.get("description"),
-        "weather_icon":      weather.get("icon"),
-        # słońce
-        "sunrise_at":        sys.get("sunrise"),
-        "sunset_at":         sys.get("sunset"),
-        # lokalizacja
-        "lat":               coord.get("lat"),
-        "lon":               coord.get("lon"),
-        # surowy payload jako JSONB
-        "raw_payload":       json.dumps(data),
+        "measured_at":         measured_at,
+        "temp_k":              temp_k,
+        "feels_like_k":        feels_like_k,
+        "pressure_hpa":        current.get("pressure_msl"),
+        "humidity_pct":        current.get("relative_humidity_2m"),
+        "visibility_m":        current.get("visibility"),
+        "wind_speed_ms":       current.get("wind_speed_10m"),
+        "wind_deg":            current.get("wind_direction_10m"),
+        "wind_gust_ms":        current.get("wind_gusts_10m"),
+        "clouds_pct":          current.get("cloud_cover"),
+        "rain_1h_mm":          current.get("precipitation"),
+        "snow_1h_mm":          None,   # Open-Meteo current nie rozdziela deszczu od śniegu
+        "weather_id":          wmo_code,
+        "weather_main":        main_desc,
+        "weather_description": desc,
+        "sunrise_at":          parse_dt(sunrise_str),
+        "sunset_at":           parse_dt(sunset_str),
+        "lat":                 data.get("latitude"),
+        "lon":                 data.get("longitude"),
+        "raw_payload":         json.dumps(data),   # pełny JSON — odróżnia od danych historycznych
     }
 
-# ── Połączenie z bazą ─────────────────────────────────────────────────────────
+# ── Połączenia ────────────────────────────────────────────────────────────────
 
 def build_db_connection():
-    """Łączy się z PostgreSQL z retry logic."""
     for attempt in range(1, 11):
         try:
             conn = psycopg2.connect(
-                host=POSTGRES_HOST,
-                port=POSTGRES_PORT,
-                dbname=POSTGRES_DB,
-                user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD,
+                host=POSTGRES_HOST, port=POSTGRES_PORT,
+                dbname=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASSWORD,
             )
             conn.autocommit = False
             log.info("Połączono z PostgreSQL: %s/%s", POSTGRES_HOST, POSTGRES_DB)
@@ -131,7 +174,6 @@ def build_db_connection():
 
 
 def build_consumer() -> KafkaConsumer:
-    """Tworzy KafkaConsumer z retry logic."""
     for attempt in range(1, 11):
         try:
             consumer = KafkaConsumer(
@@ -139,7 +181,7 @@ def build_consumer() -> KafkaConsumer:
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
                 group_id=KAFKA_GROUP_ID,
                 auto_offset_reset="earliest",
-                enable_auto_commit=False,       # ręczny commit po zapisie do DB
+                enable_auto_commit=False,
                 value_deserializer=lambda v: json.loads(v.decode("utf-8")),
             )
             log.info("Połączono z Kafka, subskrypcja: %s", KAFKA_TOPIC_RAW)
@@ -149,7 +191,7 @@ def build_consumer() -> KafkaConsumer:
             time.sleep(5)
     raise RuntimeError("Nie można połączyć się z Kafka po 10 próbach.")
 
-# ── Główna pętla ─────────────────────────────────────────────────────────────
+# ── Główna pętla ──────────────────────────────────────────────────────────────
 
 def main():
     log.info("Uruchamiam konsumenta | topic=%s, group=%s", KAFKA_TOPIC_RAW, KAFKA_GROUP_ID)
@@ -162,21 +204,25 @@ def main():
             raw_data = message.value
             log.debug("Odebrano wiadomość: offset=%d", message.offset)
 
-            record = parse_owm_payload(raw_data)
+            record = parse_open_meteo_payload(raw_data)
 
             with conn.cursor() as cur:
                 cur.execute(INSERT_SQL, record)
-            conn.commit()
+                inserted = cur.rowcount
 
-            # Commit offsetu do Kafka dopiero po pomyślnym zapisie do DB
+            conn.commit()
             consumer.commit()
 
-            log.info(
-                "Zapisano rekord: measured_at=%s, temp_c=%.2f°C, pressure=%s hPa",
-                record["measured_at"],
-                (record["temp_k"] or 0) - 273.15,
-                record["pressure_hpa"],
-            )
+            if inserted:
+                log.info(
+                    "Zapisano: measured_at=%s, temp=%.1f°C, pressure=%.1f hPa, %s",
+                    record["measured_at"],
+                    (record["temp_k"] or 273.15) - 273.15,
+                    record["pressure_hpa"] or 0,
+                    record["weather_description"],
+                )
+            else:
+                log.info("Pominięto duplikat: measured_at=%s", record["measured_at"])
 
         except (psycopg2.Error, psycopg2.OperationalError) as e:
             log.error("Błąd PostgreSQL: %s — próba ponownego połączenia", e)
@@ -189,7 +235,6 @@ def main():
 
         except Exception as e:
             log.exception("Nieoczekiwany błąd przy przetwarzaniu wiadomości: %s", e)
-            # Nie commitujemy offsetu — wiadomość zostanie przetworzona ponownie
             conn.rollback()
 
 

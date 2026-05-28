@@ -1,8 +1,13 @@
 """
-Weather Producer
-----------------
-Co FETCH_INTERVAL_SECONDS sekund odpytuje OpenWeatherMap API
+Weather Producer — Open-Meteo current API → Kafka
+--------------------------------------------------
+Co FETCH_INTERVAL_SECONDS sekund pobiera aktualne dane pogodowe
+z Open-Meteo (darmowe, bez klucza API, aktualizacja co ~15 min)
 i publikuje surowy JSON do topiku Kafka 'weather-raw'.
+
+Endpoint aktualizuje dane co 900 sekund (15 min), dlatego domyślny
+interwał pobierania ustawiony jest na 900s — odpytywanie częściej
+nie przynosi nowych danych.
 """
 
 import json
@@ -15,7 +20,7 @@ import requests
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
-# ── Konfiguracja ────────────────────────────────────────────────────────────
+# ── Konfiguracja ─────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,23 +31,20 @@ log = logging.getLogger(__name__)
 KAFKA_BOOTSTRAP_SERVERS = os.environ["KAFKA_BOOTSTRAP_SERVERS"]
 KAFKA_TOPIC_RAW         = os.environ.get("KAFKA_TOPIC_RAW", "weather-raw")
 
-OWM_API_KEY             = os.environ["OWM_API_KEY"]
-OWM_LAT                 = os.environ.get("OWM_LAT", "52.25")
-OWM_LON                 = os.environ.get("OWM_LON", "21.0")
-OWM_URL                 = "https://api.openweathermap.org/data/2.5/weather"
+LAT                     = os.environ.get("OWM_LAT", "52.25")
+LON                     = os.environ.get("OWM_LON", "21.0")
+FETCH_INTERVAL_SECONDS  = int(os.environ.get("FETCH_INTERVAL_SECONDS", "900"))
 
-FETCH_INTERVAL_SECONDS  = int(os.environ.get("FETCH_INTERVAL_SECONDS", "60"))
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
-# ── Funkcje pomocnicze ───────────────────────────────────────────────────────
+# ── Funkcje pomocnicze ────────────────────────────────────────────────────────
 
 def build_producer() -> KafkaProducer:
-    """Tworzy KafkaProducer z retry logic."""
     for attempt in range(1, 11):
         try:
             producer = KafkaProducer(
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-                # Gwarancja dostarczenia: czekaj na potwierdzenie od lidera
                 acks="all",
                 retries=3,
             )
@@ -55,18 +57,35 @@ def build_producer() -> KafkaProducer:
 
 
 def fetch_weather() -> dict:
-    """Pobiera aktualne dane pogodowe z OWM API."""
+    """Pobiera aktualne dane pogodowe z Open-Meteo."""
     params = {
-        "lat":   OWM_LAT,
-        "lon":   OWM_LON,
-        "appid": OWM_API_KEY,
+        "latitude":  LAT,
+        "longitude": LON,
+        "current": ",".join([
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "precipitation",
+            "weather_code",
+            "pressure_msl",
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "wind_gusts_10m",
+            "cloud_cover",
+            "visibility",
+        ]),
+        "daily":           "sunrise,sunset",
+        "wind_speed_unit": "ms",
+        "timezone":        "Europe/Warsaw",
+        "forecast_days":   1,
     }
-    response = requests.get(OWM_URL, params=params, timeout=10)
+    response = requests.get(OPEN_METEO_URL, params=params, timeout=10)
     response.raise_for_status()
     data = response.json()
 
-    # Dodajemy znacznik czasu pobrania (po stronie producenta)
+    # Dodajemy znacznik czasu pobrania po stronie producenta
     data["_producer_ts"] = datetime.now(timezone.utc).isoformat()
+    data["_source"]      = "open-meteo-current"
 
     return data
 
@@ -82,13 +101,14 @@ def on_send_error(exc):
     log.error("Błąd publikowania do Kafka: %s", exc)
 
 
-# ── Główna pętla ─────────────────────────────────────────────────────────────
+# ── Główna pętla ──────────────────────────────────────────────────────────────
 
 def main():
     log.info(
         "Uruchamiam producenta | lat=%s, lon=%s, interval=%ds, topic=%s",
-        OWM_LAT, OWM_LON, FETCH_INTERVAL_SECONDS, KAFKA_TOPIC_RAW,
+        LAT, LON, FETCH_INTERVAL_SECONDS, KAFKA_TOPIC_RAW,
     )
+    log.info("Źródło: Open-Meteo (aktualizacja co ~15 min)")
 
     producer = build_producer()
 
@@ -96,19 +116,20 @@ def main():
         start = time.monotonic()
 
         try:
-            data = fetch_weather()
+            data    = fetch_weather()
+            current = data.get("current", {})
             log.info(
-                "Pobrano dane: temp=%.2fK, pressure=%s hPa, humidity=%s%%",
-                data.get("main", {}).get("temp", 0),
-                data.get("main", {}).get("pressure"),
-                data.get("main", {}).get("humidity"),
+                "Pobrano: time=%s, temp=%.1f°C, pressure=%.1f hPa, humidity=%s%%",
+                current.get("time"),
+                current.get("temperature_2m", 0),
+                current.get("pressure_msl", 0),
+                current.get("relative_humidity_2m"),
             )
 
             producer.send(KAFKA_TOPIC_RAW, value=data) \
                     .add_callback(on_send_success) \
                     .add_errback(on_send_error)
 
-            # Flush żeby nie trzymać w buforze przy małym ruchu
             producer.flush()
 
         except requests.exceptions.RequestException as e:
@@ -116,10 +137,9 @@ def main():
         except Exception as e:
             log.exception("Nieoczekiwany błąd: %s", e)
 
-        # Precyzyjne czekanie: odejmujemy czas wykonania
-        elapsed = time.monotonic() - start
+        elapsed   = time.monotonic() - start
         sleep_for = max(0, FETCH_INTERVAL_SECONDS - elapsed)
-        log.debug("Następne pobranie za %.1fs", sleep_for)
+        log.debug("Następne pobranie za %.0fs", sleep_for)
         time.sleep(sleep_for)
 
 
