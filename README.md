@@ -173,6 +173,51 @@ Skrypt wypisze postęp i ile rekordów wstawił. Możesz go uruchamiać wielokro
 
 ---
 
+## Stream Processor & Alerty
+
+Serwis `stream-processor` uruchamia się automatycznie razem z całym stackiem
+i wykrywa anomalie pogodowe w czasie rzeczywistym.
+
+### Wykrywane anomalie
+
+| Typ alertu       | Warunek                                                   | Severity           |
+|------------------|-----------------------------------------------------------|--------------------|
+| `TEMP_ANOMALY`   | Temperatura odbiega od średniej kroczącej o więcej niż 2σ | WARNING            |
+| `PRESSURE_DROP`  | Skok/spadek ciśnienia > 5 hPa między pomiarami            | WARNING            |
+| `HIGH_WIND`      | Prędkość wiatru > 15 m/s (> 25 m/s → CRITICAL)           | WARNING / CRITICAL |
+| `LOW_VISIBILITY` | Widoczność < 1000 m (< 200 m → CRITICAL)                  | WARNING / CRITICAL |
+
+### Sprawdzenie alertów w bazie
+
+```sql
+SELECT alert_type, severity, message, measured_at, trigger_value
+FROM weather_alerts
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+### Skan anomalii na danych historycznych
+
+Dane historyczne omijają Kafkę i trafiają bezpośrednio do bazy — stream processor
+ich nie widzi. Żeby wykryć anomalie też na danych historycznych, uruchom jednorazowo:
+
+```bash
+docker compose run --rm stream-processor python historical_anomaly_scan.py
+```
+
+Skrypt można uruchamiać wielokrotnie — duplikaty są pomijane automatycznie.
+
+### Podgląd alertów na topiku Kafka
+
+```bash
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:29092 \
+  --topic weather-alerts \
+  --from-beginning
+```
+
+---
+
 ## Codzienna praca
 
 ### Uruchomienie (każdy dzień)
@@ -196,8 +241,9 @@ docker compose down -v     # zatrzymuje kontenery I usuwa dane (ostrożnie!)
 
 ```bash
 docker logs -f weather_producer   # pobrania z Open-Meteo (co 15 min)
-docker logs -f weather_consumer   # zapisy do bazy
-docker logs -f kafka              # logi Kafki
+docker logs -f weather_consumer          # zapisy do bazy
+docker logs -f weather_stream_processor  # wykrywanie anomalii i alerty
+docker logs -f kafka                     # logi Kafki
 ```
 
 ### Aktualizacja kodu (po git pull)
@@ -266,6 +312,11 @@ weather-pipeline/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── historical_fetch.py     ← Open-Meteo → PostgreSQL (jednorazowo)
+├── stream_processor/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── stream_processor.py         ← Kafka weather-raw → anomaly detection → weather-alerts
+│   └── historical_anomaly_scan.py  ← jednorazowy skan anomalii na danych historycznych
 ├── scripts/
 │   ├── backup.sh               ← pg_dump z działającego kontenera
 │   └── restore.sh              ← przywracanie z pliku .sql
@@ -289,7 +340,7 @@ weather-pipeline/
 | Tabela                | Właściciel | Opis                                                        |
 |-----------------------|------------|-------------------------------------------------------------|
 | `weather_raw`         | Krystian   | Dane na żywo + historyczne — oba z Open-Meteo               |
-| `weather_alerts`      | Osoba 2    | Alerty ze stream processora                                 |
+| `weather_alerts`      | Maks       | Alerty ze stream processora i skanu historycznego           |
 | `weather_predictions` | Osoba 4    | Predykcje modelu ML                                         |
 
 Kolumna `raw_payload` zawiera pełny JSON dla danych na żywo, a `NULL` dla danych historycznych — po tym można odróżnić źródło.
