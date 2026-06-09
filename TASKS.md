@@ -26,7 +26,7 @@
 
 ---
 
-## Osoba 2 — Stream Processing & Alerty
+## Maks — Stream Processing & Alerty
 
 **Zakres:** przetwarzanie danych w czasie rzeczywistym, wykrywanie anomalii, generowanie alertów
 
