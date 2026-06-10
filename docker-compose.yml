@@ -133,6 +133,26 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     restart: unless-stopped
 
+  inference:
+    build: ./inference
+    container_name: weather_inference
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./ml/models:/app/models:ro
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MODELS_DIR: /app/models
+      PREDICT_INTERVAL_SECONDS: ${PREDICT_INTERVAL_SECONDS:-3600}
+    restart: unless-stopped
+
   jupyter:
     build: ./ml
     container_name: weather_jupyter
