@@ -380,6 +380,9 @@ rta-weather/
 
 ## Adresy serwisów
 
+| Serwis     | Adres                     | Login / Hasło               | Jak uruchomić |
+|------------|---------------------------|-----------------------------|---------------|
+| pgAdmin    | http://localhost:5050     | admin@sgh.waw.pl / admin    | `docker compose up -d` |
 | PostgreSQL | localhost:5432            | weather_user / weather_pass | `docker compose up -d` |
 | Kafka      | localhost:9092            | —                           | `docker compose up -d` |
 | JupyterLab | http://localhost:8888     | bez hasła                   | `docker compose --profile ml up jupyter` |
