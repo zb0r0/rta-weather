@@ -32,11 +32,7 @@ cd weather-pipeline
 
 ### 3. Skonfiguruj zmienne środowiskowe
 
-Plik `.env` jest już w repo (prywatne repozytorium). Jeśli go nie ma — skopiuj z szablonu:
-
-```bash
-cp .env.example .env
-```
+Plik `.env` jest już w repo (prywatne repozytorium) — nie musisz nic zmieniać, domyślne wartości działają od razu.
 
 Żadnego klucza API nie trzeba uzupełniać — projekt używa wyłącznie Open-Meteo, które jest w pełni darmowe.
 
@@ -173,6 +169,59 @@ Skrypt wypisze postęp i ile rekordów wstawił. Możesz go uruchamiać wielokro
 
 ---
 
+## Analiza ML i notatnik Jupyter
+
+Moduł `ml/` zawiera notatnik Jupyter z pełną analizą danych historycznych i wytrenowanymi modelami XGBoost do predykcji temperatury.
+
+### Uruchomienie JupyterLab
+
+Stack podstawowy musi być uruchomiony (potrzebna baza danych):
+
+```bash
+docker compose up -d                        # uruchom stack (jeśli jeszcze nie działa)
+docker compose --profile ml up jupyter      # uruchom JupyterLab
+```
+
+Następnie wejdź na [http://localhost:8888](http://localhost:8888) (bez hasła) i otwórz `analysis.ipynb`.
+
+### Co zawiera notatnik
+
+| Sekcja | Zawartość |
+|--------|-----------|
+| 2. Wczytanie danych | Połączenie z PostgreSQL, pobranie `weather_raw` do pandas |
+| 3. Przegląd danych | Typy, braki, statystyki opisowe |
+| 4. EDA | Rozkłady, szeregi czasowe, sezonowość dzienna/tygodniowa, korelacje |
+| 5. Feature Engineering | Cechy czasowe (sin/cos), lag features, delta, rolling statistics |
+| 6. Trening XGBoost | 4 modele: predykcja temperatury za 1h / 3h / 6h / 24h |
+| 7. Ewaluacja | MAE/RMSE/MAPE, błąd per godzina i miesiąc, autokorelacja reszt |
+| 8. Wnioski | Wyniki, interpretacja, pliki modeli |
+
+### Wyniki modeli (na danych 2020–2026)
+
+| Horyzont | MAE [°C] | RMSE [°C] |
+|----------|----------|-----------|
+| 1h | **0.40** | 0.66 |
+| 3h | **0.86** | 1.19 |
+| 6h | **1.26** | 1.68 |
+| 24h | **2.18** | 2.85 |
+
+### Pliki modeli
+
+Po uruchomieniu notatnika (`Run All`) w `ml/models/` pojawią się:
+
+```
+ml/models/
+├── xgboost_temp_1h.pkl    — model predykcji na 1h naprzód
+├── xgboost_temp_3h.pkl    — model predykcji na 3h naprzód
+├── xgboost_temp_6h.pkl    — model predykcji na 6h naprzód
+├── xgboost_temp_24h.pkl   — model predykcji na 24h naprzód
+└── feature_cols.pkl       — lista 59 cech wejściowych (wymagana przez serwis inferenncji)
+```
+
+> Pliki `.pkl` są w `.gitignore` — każdy członek zespołu musi uruchomić notatnik lokalnie żeby je wygenerować.
+
+---
+
 ## Stream Processor & Alerty
 
 Serwis `stream-processor` uruchamia się automatycznie razem z całym stackiem
@@ -293,10 +342,9 @@ bash scripts/restore.sh backups/weather_YYYY-MM-DD_HH-MM-SS.sql
 ## Struktura projektu
 
 ```
-weather-pipeline/
+rta-weather/
 ├── docker-compose.yml          ← definicja wszystkich serwisów
-├── .env                        ← zmienne środowiskowe
-├── .env.example                ← szablon .env
+├── .env                        ← zmienne środowiskowe (zakres dat, dane bazy)
 ├── .gitignore
 ├── db/
 │   └── init.sql                ← schemat bazy (auto-wykonywany przy starcie)
@@ -311,12 +359,17 @@ weather-pipeline/
 ├── historical/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── historical_fetch.py     ← Open-Meteo → PostgreSQL (jednorazowo)
+│   └── historical_fetch.py     ← Open-Meteo archive → PostgreSQL (jednorazowo)
 ├── stream_processor/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── stream_processor.py         ← Kafka weather-raw → anomaly detection → weather-alerts
 │   └── historical_anomaly_scan.py  ← jednorazowy skan anomalii na danych historycznych
+├── ml/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── analysis.ipynb          ← EDA + feature engineering + trening XGBoost + ewaluacja
+│   └── models/                 ← wygenerowane pliki .pkl (po uruchomieniu notatnika)
 ├── scripts/
 │   ├── backup.sh               ← pg_dump z działającego kontenera
 │   └── restore.sh              ← przywracanie z pliku .sql
@@ -327,11 +380,9 @@ weather-pipeline/
 
 ## Adresy serwisów
 
-| Serwis     | Adres                     | Login / Hasło               |
-|------------|---------------------------|-----------------------------|
-| pgAdmin    | http://localhost:5050     | admin@sgh.waw.pl / admin    |
-| PostgreSQL | localhost:5432            | weather_user / weather_pass |
-| Kafka      | localhost:9092            | —                           |
+| PostgreSQL | localhost:5432            | weather_user / weather_pass | `docker compose up -d` |
+| Kafka      | localhost:9092            | —                           | `docker compose up -d` |
+| JupyterLab | http://localhost:8888     | bez hasła                   | `docker compose --profile ml up jupyter` |
 
 ---
 
