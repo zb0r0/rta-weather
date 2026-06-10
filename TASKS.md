@@ -58,7 +58,7 @@ weather_alerts (id, created_at, alert_type, severity, message,
 
 ---
 
-## Osoba 3 — Analiza historyczna & Trening modelu ML
+## Małgosia — Analiza historyczna & Trening modelu ML
 
 **Zakres:** eksploracja danych, budowa i trening modelu predykcyjnego
 
@@ -94,7 +94,7 @@ Tabela `weather_raw` — dane godzinowe od `HISTORY_START_DATE`, uzupełniane co
 
 ---
 
-## Osoba 4 — Serwis predykcji (inference)
+## Alicja — Serwis predykcji (inference)
 
 **Zakres:** mikroserwis ładujący model ML i generujący predykcje na bieżąco
 
@@ -132,7 +132,7 @@ SELECT * FROM v_prediction_accuracy;
 
 ---
 
-## Osoba 5 — Dashboard & Wizualizacja
+## Łukasz — Dashboard & Wizualizacja
 
 **Zakres:** Grafana, panele wizualizacyjne, prezentacja projektu
 
