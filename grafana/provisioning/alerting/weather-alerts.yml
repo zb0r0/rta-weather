@@ -1,0 +1,70 @@
+# ============================================================
+# Provisioning: reguła alertu Grafany
+# Odpytuje tabelę weather_alerts co minutę — jeśli w ciągu
+# ostatnich 15 minut pojawił się nowy wpis, alert przechodzi
+# w stan FIRING (wizualne powiadomienie w UI + adnotacja na
+# panelu "Alerty w ostatnich 24h" dashboardu).
+# ============================================================
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: weather-alerts
+    folder: Weather
+    interval: 1m
+    rules:
+      - uid: weather-new-alert
+        title: Nowy alert pogodowy (weather_alerts)
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: weather-postgres
+            model:
+              editorMode: code
+              format: table
+              intervalMs: 1000
+              maxDataPoints: 43200
+              rawQuery: true
+              rawSql: SELECT COUNT(*)::float AS new_alerts FROM weather_alerts WHERE created_at > NOW() - INTERVAL '15 minutes'
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: classic_conditions
+              datasource:
+                type: __expr__
+                uid: __expr__
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+        dashboardUid: weather-sgh
+        panelId: 4
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: 'W ciągu ostatnich 15 minut stream processor zapisał nowy alert do tabeli weather_alerts. Szczegóły w panelu "Ostatnie alerty" na dashboardzie.'
+        labels:
+          source: stream-processor
+        isPaused: false

@@ -132,24 +132,24 @@ SELECT * FROM v_prediction_accuracy;
 
 ---
 
-## Łukasz — Dashboard & Wizualizacja
+## Łukasz — Dashboard & Wizualizacja ✅
 
 **Zakres:** Grafana, panele wizualizacyjne, prezentacja projektu
 
 ### Opis
 Dashboard w Grafanie podłączony do PostgreSQL. Prezentuje dane live, historię, alerty i porównanie predykcji z rzeczywistością.
 
-### Do zrobienia
-- [ ] Podłączenie Grafany do PostgreSQL jako data source
-- [ ] Panel: **temperatura na żywo** — ostatnie 24h, gauge z aktualną wartością
-- [ ] Panel: **temperatura historyczna** — time series z zakresem dat do wyboru
-- [ ] Panel: **ciśnienie, wilgotność, wiatr** — time series
-- [ ] Panel: **alerty** — tabela ostatnich alertów z `weather_alerts`
-- [ ] Panel: **predykcje vs rzeczywistość** — wykres nakładający predykcje na rzeczywiste dane (widok `v_prediction_accuracy`)
-- [ ] Panel: **statystyki dzienne** — min/max/średnia temperatury per dzień
-- [ ] Konfiguracja alertów w Grafanie (wizualne powiadomienie przy nowym wpisie w `weather_alerts`)
-- [ ] Dodanie Grafany do `docker-compose.yml` jako serwis
-- [ ] Eksport konfiguracji dashboardu do pliku JSON (żeby działał na każdej maszynie po `git clone`)
+### Zrobione
+- [x] Podłączenie Grafany do PostgreSQL jako data source (provisioning: `grafana/provisioning/datasources/postgres.yml`)
+- [x] Panel: **temperatura na żywo** — ostatnie 24h, gauge z aktualną wartością
+- [x] Panel: **temperatura historyczna** — time series z zakresem dat do wyboru (time picker + auto-agregacja)
+- [x] Panel: **ciśnienie, wilgotność, wiatr** — time series (3 panele)
+- [x] Panel: **alerty** — tabela ostatnich alertów z `weather_alerts` (kolorowanie severity)
+- [x] Panel: **predykcje vs rzeczywistość** — wykres nakładający predykcje na rzeczywiste dane (widok `v_prediction_accuracy`) + panel MAE per horyzont + zmienna dashboardu do filtrowania horyzontu
+- [x] Panel: **statystyki dzienne** — min/max/średnia temperatury per dzień
+- [x] Konfiguracja alertów w Grafanie — reguła alertu (FIRING gdy nowy wpis w `weather_alerts` w ciągu 15 min) + stat panel z czerwonym tłem + adnotacje alertów na wykresach
+- [x] Dodanie Grafany do `docker-compose.yml` jako serwis (port 3000, dane w volume `grafana_data`)
+- [x] Eksport konfiguracji dashboardu do pliku JSON (`grafana/dashboards/weather.json`, auto-ładowany przez provisioning — działa po `git clone`)
 
 ### Propozycje rozszerzenia
 - Panel z mapą wiatru (kierunek + prędkość)

@@ -267,6 +267,49 @@ docker exec -it kafka kafka-console-consumer \
 
 ---
 
+## Dashboard Grafana
+
+Grafana startuje automatycznie razem z całym stackiem (`docker compose up -d`)
+i konfiguruje się sama przez provisioning — **zero klikania po `git clone`**:
+
+- data source PostgreSQL (`grafana/provisioning/datasources/postgres.yml`),
+- dashboard z plików JSON (`grafana/dashboards/weather.json`),
+- reguła alertu (`grafana/provisioning/alerting/weather-alerts.yml`).
+
+### Dostęp
+
+1. Wejdź na [http://localhost:3000](http://localhost:3000)
+2. Zaloguj się: `admin` / `admin` (konfigurowalne w `.env`: `GRAFANA_USER`, `GRAFANA_PASSWORD`)
+3. Dashboard **"Pogoda SGH — monitoring w czasie rzeczywistym"** jest ustawiony jako strona startowa
+
+### Panele
+
+| Panel | Opis |
+|-------|------|
+| Temperatura teraz | Gauge z ostatnim pomiarem |
+| Temperatura na żywo | Ostatnie 24h (niezależnie od time pickera) |
+| Alerty w ostatnich 24h | Stat — czerwone tło gdy są nowe alerty |
+| Świeżość danych | Minuty od ostatniego pomiaru (kontrola pipeline'u) |
+| Temperatura historyczna | Pełna historia, zakres dat z time pickera, auto-agregacja |
+| Ciśnienie / Wilgotność / Wiatr | Time series dla pozostałych zmiennych |
+| Predykcje vs rzeczywistość | Predykcje XGBoost (przerywane) na tle rzeczywistych pomiarów — widok `v_prediction_accuracy`, filtr horyzontu zmienną dashboardu |
+| MAE per horyzont | Średni błąd predykcji dla +1h/+3h/+6h/+24h |
+| Statystyki dzienne | Min/max/średnia temperatury per dzień (pasmo min–max) |
+| Ostatnie alerty | Tabela `weather_alerts` z kolorowaniem severity |
+
+Dodatkowo alerty z `weather_alerts` wyświetlane są jako **adnotacje** (pionowe czerwone
+linie) na wykresach czasowych, a reguła alertu Grafany (Alerting → Alert rules →
+folder *Weather*) przechodzi w stan FIRING gdy w ciągu ostatnich 15 minut pojawi
+się nowy wpis w `weather_alerts`.
+
+### Edycja dashboardu
+
+Dashboard można edytować w UI, ale zmiany w UI nie trafiają do repo. Żeby je
+utrwalić: Dashboard settings → **JSON Model** → skopiuj zawartość do
+`grafana/dashboards/weather.json` i zacommituj.
+
+---
+
 ## Codzienna praca
 
 ### Uruchomienie (każdy dzień)
@@ -370,6 +413,13 @@ rta-weather/
 │   ├── requirements.txt
 │   ├── analysis.ipynb          ← EDA + feature engineering + trening XGBoost + ewaluacja
 │   └── models/                 ← wygenerowane pliki .pkl (po uruchomieniu notatnika)
+├── grafana/
+│   ├── dashboards/
+│   │   └── weather.json        ← dashboard (auto-ładowany przy starcie)
+│   └── provisioning/
+│       ├── datasources/        ← data source PostgreSQL
+│       ├── dashboards/         ← provider ładujący pliki JSON
+│       └── alerting/           ← reguła alertu (nowy wpis w weather_alerts)
 ├── scripts/
 │   ├── backup.sh               ← pg_dump z działającego kontenera
 │   └── restore.sh              ← przywracanie z pliku .sql
@@ -382,6 +432,7 @@ rta-weather/
 
 | Serwis     | Adres                     | Login / Hasło               | Jak uruchomić |
 |------------|---------------------------|-----------------------------|---------------|
+| Grafana    | http://localhost:3000     | admin / admin               | `docker compose up -d` |
 | pgAdmin    | http://localhost:5050     | admin@sgh.waw.pl / admin    | `docker compose up -d` |
 | PostgreSQL | localhost:5432            | weather_user / weather_pass | `docker compose up -d` |
 | Kafka      | localhost:9092            | —                           | `docker compose up -d` |

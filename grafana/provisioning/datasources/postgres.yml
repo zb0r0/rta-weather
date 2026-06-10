@@ -1,0 +1,26 @@
+# ============================================================
+# Provisioning: PostgreSQL jako data source Grafany
+# Plik czytany automatycznie przy starcie kontenera grafana.
+# Dane logowania pobierane ze zmiennych środowiskowych (.env).
+# ============================================================
+apiVersion: 1
+
+datasources:
+  - name: Weather PostgreSQL
+    uid: weather-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: $POSTGRES_USER
+    isDefault: true
+    editable: true
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      maxOpenConns: 10
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: $POSTGRES_PASSWORD

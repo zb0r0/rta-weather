@@ -1,0 +1,18 @@
+# ============================================================
+# Provisioning: automatyczne ładowanie dashboardów z plików JSON
+# Każdy plik .json z katalogu /etc/grafana/dashboards trafia
+# do Grafany przy starcie — działa od razu po `git clone`.
+# ============================================================
+apiVersion: 1
+
+providers:
+  - name: weather-dashboards
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false
