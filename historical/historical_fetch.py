@@ -126,7 +126,8 @@ def fetch_historical(start_date: str, end_date: str) -> dict:
             "weather_code",
         ]),
         "wind_speed_unit": "ms",       # m/s zamiast domyślnych km/h
-        "timezone":        "Europe/Warsaw",
+        # UTC, nie Europe/Warsaw — measured_at zapisywany jako timestamptz w UTC
+        "timezone":        "UTC",
     }
     log.info("Pobieram dane z Open-Meteo: %s → %s", start_date, end_date)
     resp = requests.get(OPEN_METEO_URL, params=params, timeout=30)
@@ -152,10 +153,10 @@ def parse_records(data: dict) -> list[dict]:
         temp_k       = (temp_c + 273.15)       if temp_c       is not None else None
         feels_like_k = (feels_like_c + 273.15) if feels_like_c is not None else None
 
-        # Open-Meteo zwraca czas jako string "2026-01-01T00:00" bez strefy
-        # Traktujemy go jako czas lokalny Warszawy i zapisujemy jako timestamptz
+        # Open-Meteo zwraca czas jako string "2026-01-01T00:00" bez strefy;
+        # przy timezone=UTC w zapytaniu jest to czas UTC
         measured_at = datetime.fromisoformat(times[i]).replace(
-            tzinfo=timezone.utc  # Open-Meteo z timezone=Europe/Warsaw zwraca UTC offset
+            tzinfo=timezone.utc
         )
 
         snow_mm = hourly["snowfall"][i]   # Open-Meteo: cm, przeliczamy na mm

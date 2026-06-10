@@ -111,8 +111,8 @@ def parse_open_meteo_payload(data: dict) -> dict:
     temp_k       = (temp_c + 273.15)       if temp_c       is not None else None
     feels_like_k = (feels_like_c + 273.15) if feels_like_c is not None else None
 
-    # Open-Meteo zwraca czas jako "2026-05-28T20:00" (czas lokalny strefy timezone)
-    # Parsujemy bez strefy i traktujemy jako UTC (Open-Meteo daje czas lokalny Warszawy)
+    # Open-Meteo zwraca czas jako "2026-05-28T20:00" bez strefy;
+    # producer odpytuje API z timezone=UTC, więc to czas UTC
     measured_at_str = current.get("time", "")
     try:
         measured_at = datetime.fromisoformat(measured_at_str).replace(tzinfo=timezone.utc)

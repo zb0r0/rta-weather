@@ -76,7 +76,9 @@ def fetch_weather() -> dict:
         ]),
         "daily":           "sunrise,sunset",
         "wind_speed_unit": "ms",
-        "timezone":        "Europe/Warsaw",
+        # UTC, nie Europe/Warsaw — konsumenci parsują "time" jako UTC
+        # (.replace(tzinfo=timezone.utc)); czas lokalny przesuwałby pomiary o 1-2h
+        "timezone":        "UTC",
         "forecast_days":   1,
     }
     response = requests.get(OPEN_METEO_URL, params=params, timeout=10)

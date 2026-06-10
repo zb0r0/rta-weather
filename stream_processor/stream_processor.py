@@ -95,7 +95,7 @@ def parse_payload(data: dict) -> dict:
     """
     current = data.get("current", {})
 
-    # Parsowanie czasu pomiaru — Open-Meteo daje czas lokalny Warszawy
+    # Parsowanie czasu pomiaru — producer odpytuje Open-Meteo z timezone=UTC
     measured_at_str = current.get("time", "")
     try:
         measured_at = datetime.fromisoformat(measured_at_str).replace(tzinfo=timezone.utc)
