@@ -1,3 +1,5 @@
+FILMIK: https://youtu.be/-KQ4G_4RyMY
+
 # Weather Pipeline — SGH Warszawa
 
 Monitorowanie pogody w czasie rzeczywistym na koordynatach budynku SGH (52.25°N, 21.0°E).
