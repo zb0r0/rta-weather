@@ -6,6 +6,7 @@
 
 ---
 
+
 ## Krystian — Data Pipeline & Baza danych ✅
 
 **Zakres:** infrastruktura Docker, przepływ danych Kafka, zapis do PostgreSQL, dane historyczne
@@ -102,15 +103,15 @@ Tabela `weather_raw` — dane godzinowe od `HISTORY_START_DATE`, uzupełniane co
 Aplikacja Flask/FastAPI działająca w Dockerze. Regularnie pobiera najnowsze dane z PostgreSQL, wywołuje model (plik z Osoby 3) i zapisuje predykcje z powrotem do bazy.
 
 ### Do zrobienia
-- [ ] Mikroserwis Flask lub FastAPI (`inference_service.py`)
-- [ ] Ładowanie modelu z pliku przy starcie serwisu
-- [ ] Cykliczne generowanie predykcji (np. co 15 min, co godzinę) — na 1h, 3h, 6h, 24h naprzód
-- [ ] Zapis predykcji do tabeli `weather_predictions` w PostgreSQL
-- [ ] Endpoint REST `/predict` — opcjonalnie, do odpytywania predykcji na żądanie
-- [ ] Endpoint `/health` — sprawdzenie statusu serwisu
-- [ ] Dockerfile + requirements.txt
-- [ ] Dodanie serwisu do `docker-compose.yml`
-- [ ] Po pojawieniu się rzeczywistych danych — uzupełnianie kolumny `actual_temp_c` i `mae_temp` w tabeli predykcji
+- [x] Mikroserwis Flask lub FastAPI (`inference_service.py`)
+- [x] Ładowanie modelu z pliku przy starcie serwisu
+- [x] Cykliczne generowanie predykcji (np. co 15 min, co godzinę) — na 1h, 3h, 6h, 24h naprzód
+- [x] Zapis predykcji do tabeli `weather_predictions` w PostgreSQL
+- [x] Endpoint REST `/predict` — opcjonalnie, do odpytywania predykcji na żądanie
+- [x] Endpoint `/health` — sprawdzenie statusu serwisu
+- [x] Dockerfile + requirements.txt
+- [x] Dodanie serwisu do `docker-compose.yml`
+- [x] Po pojawieniu się rzeczywistych danych — uzupełnianie kolumny `actual_temp_c` i `mae_temp` w tabeli predykcji
 
 ### Schemat tabeli (gotowy w bazie)
 ```sql
