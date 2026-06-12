@@ -18,5 +18,3 @@ __pycache__/
 *.iws
 *.ipr
 
-# Modele ML — duże pliki binarne, trzymaj lokalnie lub w DVC/S3
-ml/models/*.pkl
